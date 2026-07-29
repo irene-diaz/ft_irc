@@ -40,16 +40,19 @@ void Server::init(int port, const std::string &password)
         throw std::runtime_error("Failed to set socket options");
     }
 
-    // Initialize the server address structure with 0s
+    // Initialize the server address structure with 0s, for cleaning the structure before using it
     memset(&_serverAddr, 0, sizeof(_serverAddr));
 
-    // AF_INET: IPv4 Internet protocols
+    // sockaddr_in es una estructura que represnta una direccion web
+    //  AF_INET: IPv4 Internet protocols
     _serverAddr.sin_family = AF_INET;
-    // Convert the port number from host byte order to network byte order
+    // Convert the port number from host byte order to network byte order and save
+    // htons=host to network short, converts a short from pc format to network format
     _serverAddr.sin_port = htons(port);
-    // INADDR_ANY: Bind the socket to all available network interfaces
+    // INADDR_ANY: IP: Bind the socket to all available network interfaces
     _serverAddr.sin_addr.s_addr = INADDR_ANY;
 
+    // Bind the socket to the specified address and port
     if (bind(_serverFd,
              reinterpret_cast<sockaddr *>(&_serverAddr),
              sizeof(_serverAddr)) == -1)
@@ -57,8 +60,83 @@ void Server::init(int port, const std::string &password)
         throw std::runtime_error("Failed to bind socket");
     }
 
+    // Start listening for incoming connections on the socket
     if (listen(_serverFd, SOMAXCONN) == -1)
     {
         throw std::runtime_error("Failed to listen");
+    }
+    // Add the server socket to the pollfds vector
+    pollfd serverPoll;
+
+    serverPoll.fd = _serverFd;
+    serverPoll.events = POLLIN;
+    serverPoll.revents = 0;
+
+    _pollfds.push_back(serverPoll);
+}
+
+void Server::acceptNewClient(int _serverFd, std::vector<pollfd> &pollfds)
+{
+    // Accept an incoming connection and return a new file descriptor for the accepted socket
+    /*accept(fd, addr, addrlen)*/
+    int clientFd = accept(_serverFd, NULL, NULL);
+    if (clientFd == -1)
+    {
+        throw std::runtime_error("Failed to accept new client");
+    }
+
+    // Add the new client socket to the pollfds vector
+    pollfd pfd;
+    pfd.fd = clientFd;
+    pfd.events = POLLIN; // Monitor for incoming data
+    pfd.revents = 0;     // Initialize revents to 0
+    pollfds.push_back(pfd);
+
+    std::cout << "New client connected: " << clientFd << std::endl;
+}
+
+void Server::receiveDataFromClient(int clientFd)
+{
+    char buffer[1024];
+    // Receive data from the client socket
+    /*recv(fd, buf, len, flags)*/
+    ssize_t bytesRead = recv(clientFd, buffer, sizeof(buffer) - 1, 0);
+    if (bytesRead == -1)
+    {
+        throw std::runtime_error("Failed to receive data from client");
+    }
+    else if (bytesRead == 0)
+    {
+        // Client disconnected
+        std::cout << "Client disconnected: " << clientFd << std::endl;
+        close(clientFd);
+    }
+    else
+    {
+        buffer[bytesRead] = '\0'; // Null-terminate the received data
+        std::cout << "Received data from client " << clientFd << ": " << buffer << std::endl;
+    }
+}
+void Server::run()
+{
+    while (true)
+    {
+        int ready = poll(&_pollfds[0], _pollfds.size(), -1);
+
+        if (ready == -1)
+            throw std::runtime_error("poll failed");
+
+        for (size_t i = 0; i < _pollfds.size(); i++)
+        {
+            pollfd &current = _pollfds[i];
+
+            if (!(current.revents & POLLIN))
+                continue;
+
+            if (current.fd == _serverFd)
+                acceptNewClient(_serverFd, _pollfds);
+            else
+                receiveDataFromClient(current.fd);
+        }
     }
 }
