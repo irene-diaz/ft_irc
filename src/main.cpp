@@ -12,7 +12,15 @@ int main(int argc, char **argv)
     try
     {
         Server server;
-        server.init(atoi(argv[1]), argv[2]);
+        int port = atoi(argv[1]);
+
+        if (port <= 0 || port > 65535)
+        {
+            std::cerr << "Invalid port" << std::endl;
+            return (1);
+        }
+        server.init(port, argv[2]);
+        server.run();
     }
     catch (const std::exception &e)
     {

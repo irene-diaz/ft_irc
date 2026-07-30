@@ -1,13 +1,19 @@
 #include "../include/Server.hpp"
 
 // default value for _serverFd is -1, which indicates that the server is not yet initialized
-Server::Server() : _serverFd(-1)
+Server::Server() : _serverFd(-1), _isRunning(false)
 {
 }
 
 Server::~Server()
 {
-    // Close the server socket if it was initialized
+    for (std::map<int, Client>::iterator it = _clients.begin();
+         it != _clients.end();
+         ++it)
+    {
+        close(it->first);
+    }
+
     if (_serverFd != -1)
         close(_serverFd);
 }
@@ -94,15 +100,13 @@ void Server::init(int port, const std::string &password)
 }
 
 // Accept a new client connection and add it to the pollfds vector
-void Server::acceptNewClient(int _serverFd, std::vector<pollfd> &pollfds)
+void Server::acceptNewClient()
 {
     // Accept an incoming connection and return a new file descriptor for the accepted socket
     /*accept(fd, addr, addrlen)*/
     int clientFd = accept(_serverFd, NULL, NULL);
     if (clientFd == -1)
-    {
         throw std::runtime_error("Failed to accept new client");
-    }
 
     // Create a new Client object for the accepted client socket and add it to the _clients map
     Client client(clientFd);
@@ -110,9 +114,10 @@ void Server::acceptNewClient(int _serverFd, std::vector<pollfd> &pollfds)
     // Add the new client socket to the pollfds vector
     pollfd pfd;
     pfd.fd = clientFd;
-    pfd.events = POLLIN;    // Monitor for incoming data
-    pfd.revents = 0;        // Initialize revents to 0
-    pollfds.push_back(pfd); // Add the new client socket to the pollfds vector for monitoring incoming data
+    pfd.events = POLLIN; // Monitor for incoming data
+    pfd.revents = 0;     // Initialize revents to 0
+
+    _pollfds.push_back(pfd); // Add the new client socket to the pollfds vector for monitoring incoming data
 
     std::cout << "New client connected: " << clientFd << std::endl;
 }
@@ -120,6 +125,8 @@ void Server::acceptNewClient(int _serverFd, std::vector<pollfd> &pollfds)
 // Receive data from a client socket and handle it
 void Server::receiveDataFromClient(int clientFd)
 {
+    // EXTRA: Print a message indicating that we are entering the receiveDataFromClient() function
+    // std::cout << "Entrando en receiveDataFromClient()" << std::endl;
     char buffer[1024];
     // Receive data from the client socket
     /*recv(fd, buf, len, flags)*/
@@ -132,12 +139,18 @@ void Server::receiveDataFromClient(int clientFd)
     {
         // Client disconnected
         std::cout << "Client disconnected: " << clientFd << std::endl;
-        close(clientFd);
+        removeClient(clientFd);
+        return;
     }
     else
     {
         buffer[bytesRead] = '\0'; // Null-terminate the received data
-        Client &client = _clients[clientFd];
+        std::map<int, Client>::iterator it = _clients.find(clientFd);
+
+        if (it == _clients.end())
+            return;
+
+        Client &client = it->second;
         client.appendToBuffer(buffer); // Append the received data to the client's buffer
         while (client.hasCompleteLine())
         {
@@ -150,7 +163,8 @@ void Server::receiveDataFromClient(int clientFd)
 // Run the server, continuously polling for incoming connections and data from clients
 void Server::run()
 {
-    while (true)
+    _isRunning = true;
+    while (_isRunning)
     {
         // Poll the file descriptors in the pollfds vector for events (incoming connections or data)
         int ready = poll(&_pollfds[0], _pollfds.size(), -1);
@@ -159,21 +173,62 @@ void Server::run()
             throw std::runtime_error("poll failed");
 
         // Iterate through the pollfds vector to check which file descriptors have events
-        for (size_t i = 0; i < _pollfds.size(); i++)
+        for (size_t i = 0; i < _pollfds.size(); ++i)
         {
-            // Reference to the current pollfd structure
-            pollfd &current = _pollfds[i];
-
-            // Check if the current file descriptor has incoming data (POLLIN event)
-            if (!(current.revents & POLLIN))
+            // EXTRA: Check if the current file descriptor has an event (POLLIN)
+            /*if (_pollfds[i].revents)
+            {
+                std::cout << "Evento en fd " << _pollfds[i].fd
+                          << " revents = " << _pollfds[i].revents << std::endl;
+            }*/
+            // Check if the current file descriptor has an event (POLLIN)
+            if (!(_pollfds[i].revents & POLLIN))
                 continue;
 
-            // If the current file descriptor is the server socket, accept a new client connection
-            if (current.fd == _serverFd)
-                acceptNewClient(_serverFd, _pollfds);
-            // If the current file descriptor is a client socket, receive data from the client
+            // Get the file descriptor that has an event
+            int fd = _pollfds[i].fd;
+
+            // If the event is on the server socket, accept a new client connection; otherwise, receive data from the client socket
+            if (fd == _serverFd)
+                acceptNewClient();
             else
-                receiveDataFromClient(current.fd);
+                receiveDataFromClient(fd);
         }
+    }
+}
+
+void Server::removeClient(int clientFd)
+{
+    // Close the client socket
+    close(clientFd);
+    // Remove the client from the _clients map
+    _clients.erase(clientFd);
+
+    // Remove the client from the _pollfds vector
+    for (std::vector<pollfd>::iterator it = _pollfds.begin(); it != _pollfds.end(); ++it)
+    {
+        if (it->fd == clientFd)
+        {
+            _pollfds.erase(it);
+            break;
+        }
+    }
+}
+
+void Server::sendDataToClient(int clientFd, const std::string &data)
+{
+    size_t total = 0;
+
+    while (total < data.size())
+    {
+        ssize_t bytesSent = send(clientFd,
+                                 data.c_str() + total,
+                                 data.size() - total,
+                                 0);
+
+        if (bytesSent == -1)
+            throw std::runtime_error("Failed to send data to client");
+
+        total += bytesSent;
     }
 }

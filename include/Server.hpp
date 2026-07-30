@@ -21,19 +21,20 @@ class Server
 private:
     int _serverFd;
     sockaddr_in _serverAddr; // Server address structure
+    bool _isRunning;         // Flag to indicate if the server is running
 
     std::vector<pollfd> _pollfds; // Vector to hold pollfd structures for polling
     std::map<int, Client> _clients;
-    void acceptNewClient(int _serverFd, std::vector<pollfd> &pollfds);
+    void acceptNewClient();
     void receiveDataFromClient(int clientFd);
+    void sendDataToClient(int clientFd, const std::string &data);
+    void removeClient(int clientFd);
 
 public:
     Server();
     ~Server();
     Server(const Server &other);
     Server &operator=(const Server &other);
-
-    int getServerFd() const { return _serverFd; };
 
     void init(int port, const std::string &password);
     void run();
