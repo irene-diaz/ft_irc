@@ -20,9 +20,9 @@ class Server
 {
 private:
     int _serverFd;
-    sockaddr_in _serverAddr;
+    sockaddr_in _serverAddr; // Server address structure
 
-    std::vector<pollfd> _pollfds;
+    std::vector<pollfd> _pollfds; // Vector to hold pollfd structures for polling
     std::map<int, Client> _clients;
     void acceptNewClient(int _serverFd, std::vector<pollfd> &pollfds);
     void receiveDataFromClient(int clientFd);
@@ -30,6 +30,8 @@ private:
 public:
     Server();
     ~Server();
+    Server(const Server &other);
+    Server &operator=(const Server &other);
 
     int getServerFd() const { return _serverFd; };
 
