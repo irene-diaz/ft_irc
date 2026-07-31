@@ -1,44 +1,9 @@
-#include "../include/Server.hpp"
-
-// default value for _serverFd is -1, which indicates that the server is not yet initialized
-Server::Server() : _serverFd(-1), _isRunning(false)
-{
-}
-
-Server::~Server()
-{
-    for (std::map<int, Client>::iterator it = _clients.begin();
-         it != _clients.end();
-         ++it)
-    {
-        close(it->first);
-    }
-
-    if (_serverFd != -1)
-        close(_serverFd);
-}
-
-Server::Server(const Server &other)
-    : _serverFd(other._serverFd), _serverAddr(other._serverAddr), _pollfds(other._pollfds), _clients(other._clients)
-{
-}
-
-Server &Server::operator=(const Server &other)
-{
-    if (this != &other)
-    {
-        _serverFd = other._serverFd;
-        _serverAddr = other._serverAddr;
-        _pollfds = other._pollfds;
-        _clients = other._clients;
-    }
-    return *this;
-}
+#include "../../include/Server.hpp"
 
 // Initialize the server socket, bind it to the specified port, and start listening for incoming connections
 void Server::init(int port, const std::string &password)
 {
-    (void)password;
+    _password = password; // Store the password for client authentication
 
     // Create a socket(domain, type, protocol), return a file descriptor for the new socket
     /*AF_INET: IPv4 Internet protocols
@@ -155,8 +120,13 @@ void Server::receiveDataFromClient(int clientFd)
         while (client.hasCompleteLine())
         {
             std::string line = client.extractLine();
-            std::cout << "Complete line from client " << clientFd << ": " << line << std::endl;
-            // Here you can process the complete line received from the client
+            std::vector<std::string> args;
+
+            std::string command = _parser.parseCommand(line, args);
+
+            executeCommand(client, command, args);
+            // DEBUG: Print the complete line received from the client for debugging purposes
+            //  std::cout << "Complete line from client " << clientFd << ": " << line << std::endl;
         }
     }
 }
@@ -213,6 +183,7 @@ void Server::removeClient(int clientFd)
             break;
         }
     }
+    std::cout << "Client removed: " << clientFd << std::endl;
 }
 
 void Server::sendDataToClient(int clientFd, const std::string &data)

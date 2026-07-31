@@ -8,6 +8,8 @@ class Client
 private:
     int _fd;
     std::string _recvBuffer;
+
+    bool _passAccepted;
     /*std::string _nickname;
     std::string _username;
     std::string _realname;*/
@@ -22,6 +24,8 @@ public:
     bool hasCompleteLine() const;
     std::string extractLine();
     const std::string &getRecvBuffer() const;
+    bool isPassAccepted() const;
+    void setPassAccepted(bool accepted);
 };
 
 #endif

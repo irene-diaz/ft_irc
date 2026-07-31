@@ -1,7 +1,7 @@
 CXX = c++
 CXXFLAGS = -Wall -Wextra -Werror -std=c++98 #-fsanitize=address -g
 #LDFLAGS = -fsanitize=address
-SRCS = src/Server.cpp src/Client.cpp src/main.cpp
+SRCS = src/Server/Server.cpp src/Server/ServerCommands.cpp src/Server/ServerNetwork.cpp src/Client.cpp src/Parser.cpp src/main.cpp
 OBJS_DIR = obj
 OBJS = $(addprefix $(OBJS_DIR)/, $(SRCS:.cpp=.o))
 NAME = ft_irc
