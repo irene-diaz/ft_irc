@@ -1,7 +1,7 @@
 #include "../include/Client.hpp"
 
 Client::Client(int fd)
-    : _fd(fd), _passAccepted(false)
+    : _fd(fd), _passAccepted(false), _isRegistered(false)
 {
 }
 
@@ -10,12 +10,12 @@ Client::~Client()
 }
 
 Client::Client()
-    : _fd(-1), _passAccepted(false)
+    : _fd(-1), _passAccepted(false), _isRegistered(false)
 {
 }
 
 Client::Client(const Client &other)
-    : _fd(other._fd), _recvBuffer(other._recvBuffer), _passAccepted(other._passAccepted)
+    : _fd(other._fd), _recvBuffer(other._recvBuffer), _passAccepted(other._passAccepted), _isRegistered(other._isRegistered), _nickname(other._nickname), _username(other._username), _realname(other._realname)
 {
 }
 
@@ -26,6 +26,10 @@ Client &Client::operator=(const Client &other)
         _fd = other._fd;
         _recvBuffer = other._recvBuffer;
         _passAccepted = other._passAccepted;
+        _isRegistered = other._isRegistered;
+        _nickname = other._nickname;
+        _username = other._username;
+        _realname = other._realname;
     }
     return *this;
 }
@@ -72,4 +76,39 @@ bool Client::isPassAccepted() const
 void Client::setPassAccepted(bool accepted)
 {
     _passAccepted = accepted;
+}
+
+int Client::getFd() const
+{
+    return _fd;
+}
+
+const std::string &Client::getNickname() const
+{
+    return _nickname;
+}
+
+void Client::setNickname(const std::string &nickname)
+{
+    _nickname = nickname;
+}
+
+const std::string &Client::getUsername() const
+{
+    return _username;
+}
+
+void Client::setUsername(const std::string &username)
+{
+    _username = username;
+}
+
+const std::string &Client::getRealname() const
+{
+    return _realname;
+}
+
+void Client::setRealname(const std::string &realname)
+{
+    _realname = realname;
 }

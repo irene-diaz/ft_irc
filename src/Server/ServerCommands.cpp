@@ -20,12 +20,22 @@ void Server::executeCommand(Client &client, const std::string &command, const st
 
 void Server::handlePass(Client &client, const std::vector<std::string> &args)
 {
-    (void)client;
     if (args.empty())
     {
-        std::cerr << "Error: PASS command requires a password argument." << std::endl;
+        sendDataToClient(client.getFd(),
+                         "461 PASS :Not enough parameters\r\n");
         return;
     }
-    std::string password = args[0]; // The first argument is the password
-    std::cout << "Received PASS command with password: " << password << std::endl;
+
+    if (args[0] != _password)
+    {
+        sendDataToClient(client.getFd(),
+                         "464 :Password incorrect\r\n");
+        return;
+    }
+
+    client.setPassAccepted(true);
+
+    std::cout << "Client " << client.getFd()
+              << " authenticated successfully." << std::endl;
 }
