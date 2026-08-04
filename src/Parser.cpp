@@ -36,7 +36,7 @@ std::string Parser::parseCommand(const std::string &line,
     {
         if (arg[0] == ':')
         {
-            std::string trailing = arg.substr(1);
+            std::string trailing = arg.substr(1) + " ";
             std::string rest;
 
             std::getline(ss, rest);
