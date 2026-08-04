@@ -1,5 +1,11 @@
 #include "../../include/Server.hpp"
 
+void Server::sendNumericReply(int clientFd, const std::string &code, const std::string &message)
+{
+    std::string reply = ":ft_irc " + code + " " + message + "\r\n";
+    sendDataToClient(clientFd, reply);
+}
+
 // Initialize the server socket, bind it to the specified port, and start listening for incoming connections
 void Server::init(int port, const std::string &password)
 {
@@ -134,31 +140,23 @@ void Server::receiveDataFromClient(int clientFd)
 void Server::run()
 {
     _isRunning = true;
+
     while (_isRunning)
     {
-        // Poll the file descriptors in the pollfds vector for events (incoming connections or data)
-        int ready = poll(&_pollfds[0], _pollfds.size(), -1);
+        std::vector<pollfd> pollfds = _pollfds;
+
+        int ready = poll(&pollfds[0], pollfds.size(), -1);
 
         if (ready == -1)
             throw std::runtime_error("poll failed");
 
-        // Iterate through the pollfds vector to check which file descriptors have events
-        for (size_t i = 0; i < _pollfds.size(); ++i)
+        for (size_t i = 0; i < pollfds.size(); ++i)
         {
-            // EXTRA: Check if the current file descriptor has an event (POLLIN)
-            /*if (_pollfds[i].revents)
-            {
-                std::cout << "Evento en fd " << _pollfds[i].fd
-                          << " revents = " << _pollfds[i].revents << std::endl;
-            }*/
-            // Check if the current file descriptor has an event (POLLIN)
-            if (!(_pollfds[i].revents & POLLIN))
+            if (!(pollfds[i].revents & POLLIN))
                 continue;
 
-            // Get the file descriptor that has an event
-            int fd = _pollfds[i].fd;
+            int fd = pollfds[i].fd;
 
-            // If the event is on the server socket, accept a new client connection; otherwise, receive data from the client socket
             if (fd == _serverFd)
                 acceptNewClient();
             else

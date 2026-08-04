@@ -15,7 +15,7 @@ Client::Client()
 }
 
 Client::Client(const Client &other)
-    : _fd(other._fd), _recvBuffer(other._recvBuffer), _passAccepted(other._passAccepted), _isRegistered(other._isRegistered), _nickname(other._nickname), _username(other._username), _realname(other._realname)
+    : _fd(other._fd), _recvBuffer(other._recvBuffer), _passAccepted(other._passAccepted), _isRegistered(other._isRegistered), _nickname(other._nickname), _username(other._username), _realname(other._realname), _channels(other._channels)
 {
 }
 
@@ -30,9 +30,12 @@ Client &Client::operator=(const Client &other)
         _nickname = other._nickname;
         _username = other._username;
         _realname = other._realname;
+        _channels = other._channels;
     }
     return *this;
 }
+
+/* ==================== BUFFER ==================== */
 
 // functions to manage the receive buffer
 void Client::appendToBuffer(const std::string &data)
@@ -68,6 +71,8 @@ const std::string &Client::getRecvBuffer() const
     return _recvBuffer;
 }
 
+/* ==================== PASSWORD ==================== */
+
 bool Client::isPassAccepted() const
 {
     return _passAccepted;
@@ -77,6 +82,20 @@ void Client::setPassAccepted(bool accepted)
 {
     _passAccepted = accepted;
 }
+
+/* ==================== REGISTRATION ==================== */
+
+bool Client::isRegistered() const
+{
+    return _isRegistered;
+}
+
+void Client::setRegistered(bool registered)
+{
+    _isRegistered = registered;
+}
+
+/* ==================== CLIENT INFO ==================== */
 
 int Client::getFd() const
 {
@@ -111,4 +130,42 @@ const std::string &Client::getRealname() const
 void Client::setRealname(const std::string &realname)
 {
     _realname = realname;
+}
+
+/* ==================== CHANNELS ==================== */
+
+void Client::joinChannel(const std::string &channel)
+{
+    if (channel.empty())
+        return;
+
+    for (size_t i = 0; i < _channels.size(); ++i)
+    {
+        if (_channels[i] == channel)
+            return;
+    }
+
+    _channels.push_back(channel);
+}
+
+void Client::partChannel(const std::string &channel)
+{
+    for (size_t i = 0; i < _channels.size(); ++i)
+    {
+        if (_channels[i] == channel)
+        {
+            _channels.erase(_channels.begin() + i);
+            return;
+        }
+    }
+}
+
+bool Client::isInChannel(const std::string &channel) const
+{
+    for (size_t i = 0; i < _channels.size(); ++i)
+    {
+        if (_channels[i] == channel)
+            return true;
+    }
+    return false;
 }

@@ -34,7 +34,9 @@ private:
     void receiveDataFromClient(int clientFd);
     void sendDataToClient(int clientFd, const std::string &data);
     void removeClient(int clientFd);
-
+    // function to send numeric replies to clients
+    void sendNumericReply(int clientFd, const std::string &code, const std::string &message);
+    void tryRegister(Client &client);
     // FUNCTIONS FOR COMMANDS
     void executeCommand(Client &client,
                         const std::string &command,
