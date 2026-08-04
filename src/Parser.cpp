@@ -16,27 +16,41 @@ Parser &Parser::operator=(const Parser &other)
     return *this;
 }
 
-std::string Parser::parseCommand(const std::string &line, std::vector<std::string> &args)
+std::string Parser::parseCommand(const std::string &line,
+                                 std::vector<std::string> &args)
 {
-    args.clear(); // Clear the args vector before parsing
+    args.clear();
 
     if (line.empty())
         return "";
 
-    std::stringstream ss(line); // Create a stringstream to parse the line
+    std::stringstream ss(line);
 
-    std::string command; // Variable to hold the command extracted from the line
+    std::string command;
     if (!(ss >> command))
         return "";
 
-    std::string arg; // Variable to hold each argument extracted from the line
+    std::string arg;
 
     while (ss >> arg)
-        args.push_back(arg); // Store each argument in the args vector
+    {
+        if (arg[0] == ':')
+        {
+            std::string trailing = arg.substr(1);
+            std::string rest;
 
-    // For debugging: print the command and its arguments
-    std::cout << "Command: " << command << std::endl;
-    for (size_t i = 0; i < args.size(); ++i)
-        std::cout << "Arg " << i << ": " << args[i] << std::endl;
-    return command; // Return the parsed command
+            std::getline(ss, rest);
+
+            if (!rest.empty() && rest[0] == ' ')
+                rest.erase(0, 1);
+
+            trailing += rest;
+            args.push_back(trailing);
+            break;
+        }
+
+        args.push_back(arg);
+    }
+
+    return command;
 }
