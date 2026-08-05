@@ -2,7 +2,7 @@
 
 void Server::sendNumericReply(int clientFd, const std::string &code, const std::string &message)
 {
-    std::string reply = ":ft_irc " + code + " " + message + "\r\n";
+    std::string reply = ":ircserv " + code + " " + message + "\r\n";
     sendDataToClient(clientFd, reply);
 }
 
