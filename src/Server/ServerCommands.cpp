@@ -14,6 +14,8 @@ void Server::executeCommand(Client &client, const std::string &command, const st
         handlePart(client, args);
     else if (command == "PRIVMSG")
         handlePrivMsg(client, args);
+    else if (command == "KICK")
+        handleKick(client, args);
     else
         std::cerr << "Unknown command: " << command << std::endl;
 }
@@ -151,7 +153,24 @@ void Server::handleJoin(Client &client,
 
     const std::string &channel = args[0];
 
+    bool channelExists = false; // Flag to check if the channel already exists
+    // Check if the channel already exists by looking through all clients' channels
+    for (std::map<int, Client>::iterator it = _clients.begin();
+         it != _clients.end();
+         ++it)
+    {
+        // If any client is already in the channel, we consider it as existing
+        if (it->second.isInChannel(channel))
+        {
+            channelExists = true;
+            break;
+        }
+    }
+
     client.joinChannel(channel);
+
+    if (!channelExists)
+        client.setOperator(channel); // Set the joining client as an operator for the new channel
 
     std::cout << "Client " << client.getFd()
               << " joined channel: "
@@ -182,7 +201,7 @@ void Server::handleJoin(Client &client,
             names += it->second.getNickname();
         }
     }
-    // send a list of names in the channel (for simplicity, we only send the joining client's nickname)
+    // send a list of names in the channel
     sendNumericReply(client.getFd(),
                      "353",
                      client.getNickname() + " = " + channel + " :" + names);
@@ -337,4 +356,100 @@ void Server::handlePrivMsg(Client &client,
                              target + " :No such nickname");
         }
     }
+}
+
+void Server::handleKick(Client &client,
+                        const std::vector<std::string> &args)
+{
+    if (!client.isRegistered())
+    {
+        sendNumericReply(client.getFd(),
+                         "451",
+                         ":You have not registered");
+        return;
+    }
+
+    if (args.size() < 2)
+    {
+        sendNumericReply(client.getFd(),
+                         "461",
+                         "KICK :Not enough parameters");
+        return;
+    }
+
+    const std::string &channel = args[0];
+    const std::string &nickname = args[1];
+
+    // The client performing KICK must be in the channel
+    if (!client.isInChannel(channel))
+    {
+        sendNumericReply(client.getFd(),
+                         "442",
+                         channel + " :You're not on that channel");
+        return;
+    }
+
+    // The client performing KICK must be an operator
+    if (!client.isOperator(channel))
+    {
+        sendNumericReply(client.getFd(),
+                         "482",
+                         channel + " :You're not channel operator");
+        return;
+    }
+
+    // Find the target client
+    Client *targetClient = NULL;
+
+    for (std::map<int, Client>::iterator it = _clients.begin();
+         it != _clients.end();
+         ++it)
+    {
+        if (it->second.getNickname() == nickname)
+        {
+            targetClient = &it->second;
+            break;
+        }
+    }
+
+    // Target nickname doesn't exist
+    if (targetClient == NULL)
+    {
+        sendNumericReply(client.getFd(),
+                         "401",
+                         nickname + " :No such nickname");
+        return;
+    }
+
+    // Target is not in the channel
+    if (!targetClient->isInChannel(channel))
+    {
+        sendNumericReply(client.getFd(),
+                         "441",
+                         nickname + " " + channel + " :They aren't on that channel");
+        return;
+    }
+
+    std::string reply = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost KICK " + channel + " " + nickname + "\r\n";
+
+    // Notify everyone in the channel, including the target
+    for (std::map<int, Client>::iterator it = _clients.begin();
+         it != _clients.end();
+         ++it)
+    {
+        if (it->second.isInChannel(channel))
+            sendDataToClient(it->first, reply);
+    }
+
+    // Remove the target from the channel
+    targetClient->partChannel(channel);
+
+    // If the target was an operator, remove that status too
+    targetClient->removeOperator(channel);
+
+    std::cout << "Client " << client.getFd()
+              << " kicked "
+              << nickname
+              << " from "
+              << channel << std::endl;
 }

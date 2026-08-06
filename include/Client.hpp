@@ -18,6 +18,7 @@ private:
     std::string _realname;
 
     std::vector<std::string> _channels;
+    std::vector<std::string> _operatorChannels;
 
 public:
     Client();
@@ -40,7 +41,7 @@ public:
     bool isRegistered() const;
     void setRegistered(bool registered);
 
-    //User information
+    // User information
     const std::string &getNickname() const;
     void setNickname(const std::string &nickname);
 
@@ -50,10 +51,15 @@ public:
     const std::string &getRealname() const;
     void setRealname(const std::string &realname);
 
-    //Channels
+    // Channels
     void joinChannel(const std::string &channel);
     void partChannel(const std::string &channel);
     bool isInChannel(const std::string &channel) const;
+
+    // Operators
+    void setOperator(const std::string &channel);
+    void removeOperator(const std::string &channel);
+    bool isOperator(const std::string &channel) const;
 };
 
 #endif

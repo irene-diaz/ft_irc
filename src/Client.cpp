@@ -15,7 +15,7 @@ Client::Client()
 }
 
 Client::Client(const Client &other)
-    : _fd(other._fd), _recvBuffer(other._recvBuffer), _passAccepted(other._passAccepted), _isRegistered(other._isRegistered), _nickname(other._nickname), _username(other._username), _realname(other._realname), _channels(other._channels)
+    : _fd(other._fd), _recvBuffer(other._recvBuffer), _passAccepted(other._passAccepted), _isRegistered(other._isRegistered), _nickname(other._nickname), _username(other._username), _realname(other._realname), _channels(other._channels), _operatorChannels(other._operatorChannels)
 {
 }
 
@@ -31,6 +31,7 @@ Client &Client::operator=(const Client &other)
         _username = other._username;
         _realname = other._realname;
         _channels = other._channels;
+        _operatorChannels = other._operatorChannels;
     }
     return *this;
 }
@@ -155,6 +156,7 @@ void Client::partChannel(const std::string &channel)
         if (_channels[i] == channel)
         {
             _channels.erase(_channels.begin() + i);
+            removeOperator(channel); // Remove operator status if the client leaves the channel
             return;
         }
     }
@@ -165,6 +167,40 @@ bool Client::isInChannel(const std::string &channel) const
     for (size_t i = 0; i < _channels.size(); ++i)
     {
         if (_channels[i] == channel)
+            return true;
+    }
+    return false;
+}
+
+/* ==================== OPERATOR CHANNELS ==================== */
+
+void Client::setOperator(const std::string &channel)
+{
+    for (size_t i = 0; i < _operatorChannels.size(); ++i)
+    {
+        if (_operatorChannels[i] == channel)
+            return;
+    }
+    _operatorChannels.push_back(channel);
+}
+
+void Client::removeOperator(const std::string &channel)
+{
+    for (size_t i = 0; i < _operatorChannels.size(); ++i)
+    {
+        if (_operatorChannels[i] == channel)
+        {
+            _operatorChannels.erase(_operatorChannels.begin() + i);
+            return;
+        }
+    }
+}
+
+bool Client::isOperator(const std::string &channel) const
+{
+    for (size_t i = 0; i < _operatorChannels.size(); ++i)
+    {
+        if (_operatorChannels[i] == channel)
             return true;
     }
     return false;
