@@ -151,65 +151,96 @@ void Server::handleJoin(Client &client,
         return;
     }
 
-    const std::string &channel = args[0];
+    const std::string &channelList = args[0];
 
-    bool channelExists = false; // Flag to check if the channel already exists
-    // Check if the channel already exists by looking through all clients' channels
-    for (std::map<int, Client>::iterator it = _clients.begin();
-         it != _clients.end();
-         ++it)
+    size_t start = 0;
+
+    while (start < channelList.size())
     {
-        // If any client is already in the channel, we consider it as existing
-        if (it->second.isInChannel(channel))
+        size_t comma = channelList.find(',', start);
+
+        std::string channel;
+
+        if (comma == std::string::npos)
+            channel = channelList.substr(start);
+        else
+            channel = channelList.substr(start, comma - start);
+
+        // Ignore empty channel names
+        if (!channel.empty())
         {
-            channelExists = true;
+            // Don't join the same channel twice
+            if (client.isInChannel(channel))
+            {
+                if (comma == std::string::npos)
+                    break;
+
+                start = comma + 1;
+                continue;
+            }
+            bool channelExists = false; // Flag to check if the channel already exists
+            // Check if the channel already exists by looking through all clients' channels
+            for (std::map<int, Client>::iterator it = _clients.begin();
+                 it != _clients.end();
+                 ++it)
+            {
+                // If any client is already in the channel, we consider it as existing
+                if (it->second.isInChannel(channel))
+                {
+                    channelExists = true;
+                    break;
+                }
+            }
+
+            client.joinChannel(channel);
+
+            if (!channelExists)
+                client.setOperator(channel); // Set the joining client as an operator for the new channel
+
+            std::cout << "Client " << client.getFd()
+                      << " joined channel: "
+                      << channel << std::endl;
+
+            std::string reply = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost JOIN " + channel + "\r\n";
+
+            // Broadcast the join message to all clients in the channel
+            for (std::map<int, Client>::iterator it = _clients.begin();
+                 it != _clients.end();
+                 ++it)
+            {
+                if (it->second.isInChannel(channel))
+                    sendDataToClient(it->first, reply);
+            }
+
+            std::string names; // Prepare a list of names in the channel
+
+            for (std::map<int, Client>::iterator it = _clients.begin();
+                 it != _clients.end();
+                 ++it)
+            {
+                if (it->second.isInChannel(channel))
+                {
+                    if (!names.empty())
+                        names += " ";
+
+                    names += it->second.getNickname();
+                }
+            }
+            // send a list of names in the channel
+            sendNumericReply(client.getFd(),
+                             "353",
+                             client.getNickname() + " = " + channel + " :" + names);
+
+            // send the end of names list message
+            sendNumericReply(client.getFd(),
+                             "366",
+                             client.getNickname() + " " + channel + " :End of /NAMES list");
+        }
+
+        if (comma == std::string::npos)
             break;
-        }
+        start = comma + 1;
     }
-
-    client.joinChannel(channel);
-
-    if (!channelExists)
-        client.setOperator(channel); // Set the joining client as an operator for the new channel
-
-    std::cout << "Client " << client.getFd()
-              << " joined channel: "
-              << channel << std::endl;
-
-    std::string reply = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost JOIN " + channel + "\r\n";
-
-    // Broadcast the join message to all clients in the channel
-    for (std::map<int, Client>::iterator it = _clients.begin();
-         it != _clients.end();
-         ++it)
-    {
-        if (it->second.isInChannel(channel))
-            sendDataToClient(it->first, reply);
-    }
-
-    std::string names; // Prepare a list of names in the channel
-
-    for (std::map<int, Client>::iterator it = _clients.begin();
-         it != _clients.end();
-         ++it)
-    {
-        if (it->second.isInChannel(channel))
-        {
-            if (!names.empty())
-                names += " ";
-
-            names += it->second.getNickname();
-        }
-    }
-    // send a list of names in the channel
-    sendNumericReply(client.getFd(),
-                     "353",
-                     client.getNickname() + " = " + channel + " :" + names);
-
-    // send the end of names list message
-    sendNumericReply(client.getFd(),
-                     "366",
-                     client.getNickname() + " " + channel + " :End of /NAMES list");
 }
 
 void Server::handlePart(Client &client,
@@ -231,33 +262,60 @@ void Server::handlePart(Client &client,
         return;
     }
 
-    const std::string &channel = args[0];
+    // Split the channel list by commas to handle multiple channels
+    const std::string &channelList = args[0];
 
-    if (!client.isInChannel(channel))
+    size_t start = 0;
+
+    while (start < channelList.size())
     {
-        sendNumericReply(client.getFd(),
-                         "442",
-                         channel + " :You're not on that channel");
-        return;
+        size_t comma = channelList.find(',', start);
+
+        std::string channel;
+
+        // Extract the channel name from the list
+        if (comma == std::string::npos)
+            channel = channelList.substr(start);
+        else
+            channel = channelList.substr(start, comma - start);
+
+        // Check if the client is in the channel before allowing them to part
+        if (!channel.empty())
+        {
+            if (!client.isInChannel(channel))
+            {
+                sendNumericReply(client.getFd(),
+                                 "442",
+                                 channel + " :You're not on that channel");
+                return;
+            }
+            else
+            {
+                std::string reply = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost PART " + channel + "\r\n";
+
+                // Notify all members of the channel
+                for (std::map<int, Client>::iterator it = _clients.begin();
+                     it != _clients.end();
+                     ++it)
+                {
+                    if (it->second.isInChannel(channel))
+                        sendDataToClient(it->first, reply);
+                }
+
+                // Remove the client from the channel
+                client.partChannel(channel);
+
+                std::cout << "Client " << client.getFd()
+                          << " left channel: "
+                          << channel << std::endl;
+            }
+        }
+
+        if (comma == std::string::npos)
+            break;
+
+        start = comma + 1;
     }
-
-    std::string reply = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost PART " + channel + "\r\n";
-
-    // Notify all members of the channel
-    for (std::map<int, Client>::iterator it = _clients.begin();
-         it != _clients.end();
-         ++it)
-    {
-        if (it->second.isInChannel(channel))
-            sendDataToClient(it->first, reply);
-    }
-
-    // Remove the client from the channel
-    client.partChannel(channel);
-
-    std::cout << "Client " << client.getFd()
-              << " left channel: "
-              << channel << std::endl;
 }
 
 void Server::handlePrivMsg(Client &client,
