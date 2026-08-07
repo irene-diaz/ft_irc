@@ -40,7 +40,7 @@ public:
     bool isRegistered() const;
     void setRegistered(bool registered);
 
-    //User information
+    // User information
     const std::string &getNickname() const;
     void setNickname(const std::string &nickname);
 
@@ -50,7 +50,7 @@ public:
     const std::string &getRealname() const;
     void setRealname(const std::string &realname);
 
-    //Channels
+    // Channels
     void joinChannel(const std::string &channel);
     void partChannel(const std::string &channel);
     bool isInChannel(const std::string &channel) const;

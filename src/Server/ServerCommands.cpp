@@ -14,6 +14,8 @@ void Server::executeCommand(Client &client, const std::string &command, const st
         handlePart(client, args);
     else if (command == "PRIVMSG")
         handlePrivMsg(client, args);
+    else if (command == "KICK")
+        handleKick(client, args);
     else
         std::cerr << "Unknown command: " << command << std::endl;
 }
@@ -149,48 +151,92 @@ void Server::handleJoin(Client &client,
         return;
     }
 
-    const std::string &channel = args[0];
+    const std::string &channelList = args[0];
 
-    client.joinChannel(channel);
+    size_t start = 0;
 
-    std::cout << "Client " << client.getFd()
-              << " joined channel: "
-              << channel << std::endl;
-
-    std::string reply = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost JOIN " + channel + "\r\n";
-
-    // Broadcast the join message to all clients in the channel
-    for (std::map<int, Client>::iterator it = _clients.begin();
-         it != _clients.end();
-         ++it)
+    while (start < channelList.size())
     {
-        if (it->second.isInChannel(channel))
-            sendDataToClient(it->first, reply);
-    }
+        size_t comma = channelList.find(',', start);
 
-    std::string names; // Prepare a list of names in the channel
+        std::string channel;
 
-    for (std::map<int, Client>::iterator it = _clients.begin();
-         it != _clients.end();
-         ++it)
-    {
-        if (it->second.isInChannel(channel))
+        if (comma == std::string::npos)
+            channel = channelList.substr(start);
+        else
+            channel = channelList.substr(start, comma - start);
+
+        // Ignore empty channel names
+        if (!channel.empty())
         {
-            if (!names.empty())
-                names += " ";
+            // Don't join the same channel twice
+            if (client.isInChannel(channel))
+            {
+                if (comma == std::string::npos)
+                    break;
 
-            names += it->second.getNickname();
+                start = comma + 1;
+                continue;
+            }
+            if (_channels.find(channel) == _channels.end())
+            {
+                // If the channel doesn't exist, create it
+                _channels[channel] = Channel(channel);
+
+                // Set the joining client as an operator for the new channel
+                _channels[channel].addOperator(client.getFd());
+            }
+
+            // Add the client to the channel's client list and mark them as joined
+            _channels[channel].addClient(client.getFd());
+
+            // Add the channel to the client's list of joined channels
+            client.joinChannel(channel);
+
+            std::cout << "Client " << client.getFd()
+                      << " joined channel: "
+                      << channel << std::endl;
+
+            std::string reply = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost JOIN " + channel + "\r\n";
+
+            // Broadcast the join message to all clients in the channel
+            for (std::map<int, Client>::iterator it = _clients.begin();
+                 it != _clients.end();
+                 ++it)
+            {
+                if (it->second.isInChannel(channel))
+                    sendDataToClient(it->first, reply);
+            }
+
+            std::string names; // Prepare a list of names in the channel
+
+            for (std::map<int, Client>::iterator it = _clients.begin();
+                 it != _clients.end();
+                 ++it)
+            {
+                if (it->second.isInChannel(channel))
+                {
+                    if (!names.empty())
+                        names += " ";
+
+                    names += it->second.getNickname();
+                }
+            }
+            // send a list of names in the channel
+            sendNumericReply(client.getFd(),
+                             "353",
+                             client.getNickname() + " = " + channel + " :" + names);
+
+            // send the end of names list message
+            sendNumericReply(client.getFd(),
+                             "366",
+                             client.getNickname() + " " + channel + " :End of /NAMES list");
         }
-    }
-    // send a list of names in the channel (for simplicity, we only send the joining client's nickname)
-    sendNumericReply(client.getFd(),
-                     "353",
-                     client.getNickname() + " = " + channel + " :" + names);
 
-    // send the end of names list message
-    sendNumericReply(client.getFd(),
-                     "366",
-                     client.getNickname() + " " + channel + " :End of /NAMES list");
+        if (comma == std::string::npos)
+            break;
+        start = comma + 1;
+    }
 }
 
 void Server::handlePart(Client &client,
@@ -212,33 +258,73 @@ void Server::handlePart(Client &client,
         return;
     }
 
-    const std::string &channel = args[0];
+    // Split the channel list by commas to handle multiple channels
+    const std::string &channelList = args[0];
 
-    if (!client.isInChannel(channel))
+    size_t start = 0;
+
+    while (start < channelList.size())
     {
-        sendNumericReply(client.getFd(),
-                         "442",
-                         channel + " :You're not on that channel");
-        return;
+        size_t comma = channelList.find(',', start);
+
+        std::string channel;
+
+        // Extract the channel name from the list
+        if (comma == std::string::npos)
+            channel = channelList.substr(start);
+        else
+            channel = channelList.substr(start, comma - start);
+
+        // Check if the client is in the channel before allowing them to part
+        if (!channel.empty())
+        {
+            if (!client.isInChannel(channel))
+            {
+                sendNumericReply(client.getFd(),
+                                 "442",
+                                 channel + " :You're not on that channel");
+            }
+            else
+            {
+                std::string reply = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost PART " + channel + "\r\n";
+
+                // Notify all members of the channel
+                for (std::map<int, Client>::iterator it = _clients.begin();
+                     it != _clients.end();
+                     ++it)
+                {
+                    if (it->second.isInChannel(channel))
+                        sendDataToClient(it->first, reply);
+                }
+
+                // Remove the client from the channel
+                client.partChannel(channel);
+
+                // Find the channel in the server
+                std::map<std::string, Channel>::iterator channelIt =
+                    _channels.find(channel);
+
+                if (channelIt != _channels.end())
+                {
+                    // Remove the client from the Channel
+                    channelIt->second.removeClient(client.getFd());
+
+                    // If nobody is left, destroy the channel
+                    if (channelIt->second.getClientCount() == 0)
+                        _channels.erase(channelIt);
+                }
+
+                std::cout << "Client " << client.getFd()
+                          << " left channel: "
+                          << channel << std::endl;
+            }
+        }
+
+        if (comma == std::string::npos)
+            break;
+
+        start = comma + 1;
     }
-
-    std::string reply = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost PART " + channel + "\r\n";
-
-    // Notify all members of the channel
-    for (std::map<int, Client>::iterator it = _clients.begin();
-         it != _clients.end();
-         ++it)
-    {
-        if (it->second.isInChannel(channel))
-            sendDataToClient(it->first, reply);
-    }
-
-    // Remove the client from the channel
-    client.partChannel(channel);
-
-    std::cout << "Client " << client.getFd()
-              << " left channel: "
-              << channel << std::endl;
 }
 
 void Server::handlePrivMsg(Client &client,
@@ -337,4 +423,102 @@ void Server::handlePrivMsg(Client &client,
                              target + " :No such nickname");
         }
     }
+}
+
+void Server::handleKick(Client &client,
+                        const std::vector<std::string> &args)
+{
+    if (!client.isRegistered())
+    {
+        sendNumericReply(client.getFd(),
+                         "451",
+                         ":You have not registered");
+        return;
+    }
+
+    if (args.size() < 2)
+    {
+        sendNumericReply(client.getFd(),
+                         "461",
+                         "KICK :Not enough parameters");
+        return;
+    }
+
+    const std::string &channel = args[0];
+    const std::string &nickname = args[1];
+
+    // Check if the channel exists
+    std::map<std::string, Channel>::iterator channelIt = _channels.find(channel);
+    if (channelIt == _channels.end())
+    {
+        sendNumericReply(client.getFd(), "403", channel + " :No such channel");
+        return;
+    }
+
+    // The client performing KICK must be in the channel
+    if (!client.isInChannel(channel))
+    {
+        sendNumericReply(client.getFd(), "442", channel + " :You're not on that channel");
+        return;
+    }
+
+    // The client performing KICK must be an operator
+    if (!channelIt->second.isOperator(client.getFd()))
+    {
+        sendNumericReply(client.getFd(), "482", channel + " :You're not channel operator");
+        return;
+    }
+
+    // Find the target client
+    Client *targetClient = NULL;
+
+    for (std::map<int, Client>::iterator it = _clients.begin();
+         it != _clients.end();
+         ++it)
+    {
+        if (it->second.getNickname() == nickname)
+        {
+            targetClient = &it->second;
+            break;
+        }
+    }
+
+    // Target nickname doesn't exist
+    if (targetClient == NULL)
+    {
+        sendNumericReply(client.getFd(),
+                         "401",
+                         nickname + " :No such nickname");
+        return;
+    }
+
+    // Target is not in the channel
+    if (!targetClient->isInChannel(channel))
+    {
+        sendNumericReply(client.getFd(),
+                         "441",
+                         nickname + " " + channel + " :They aren't on that channel");
+        return;
+    }
+
+    std::string reply = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost KICK " + channel + " " + nickname + "\r\n";
+
+    // Notify everyone in the channel, including the target
+    for (std::map<int, Client>::iterator it = _clients.begin();
+         it != _clients.end();
+         ++it)
+    {
+        if (it->second.isInChannel(channel))
+            sendDataToClient(it->first, reply);
+    }
+
+    // Remove the target from both sides
+    targetClient->partChannel(channel);                    // modify the client
+    channelIt->second.removeClient(targetClient->getFd()); // modify the channel
+
+    std::cout << "Client " << client.getFd()
+              << " kicked "
+              << nickname
+              << " from "
+              << channel << std::endl;
 }

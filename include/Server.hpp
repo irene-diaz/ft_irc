@@ -17,6 +17,7 @@
 
 #include "Client.hpp"
 #include "Parser.hpp"
+#include "Channel.hpp"
 class Server
 {
 private:
@@ -28,6 +29,7 @@ private:
 
     std::vector<pollfd> _pollfds; // Vector to hold pollfd structures for polling
     std::map<int, Client> _clients;
+    std::map<std::string, Channel> _channels;
 
     // FUNCTIONS FOR NETWORKING
     void acceptNewClient();
@@ -47,6 +49,7 @@ private:
     void handleJoin(Client &client, const std::vector<std::string> &args);
     void handlePart(Client &client, const std::vector<std::string> &args);
     void handlePrivMsg(Client &client, const std::vector<std::string> &args);
+    void handleKick(Client &client, const std::vector<std::string> &args);
 
 public:
     Server();
