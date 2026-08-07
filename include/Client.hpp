@@ -18,7 +18,6 @@ private:
     std::string _realname;
 
     std::vector<std::string> _channels;
-    std::vector<std::string> _operatorChannels;
 
 public:
     Client();
@@ -55,11 +54,6 @@ public:
     void joinChannel(const std::string &channel);
     void partChannel(const std::string &channel);
     bool isInChannel(const std::string &channel) const;
-
-    // Operators
-    void setOperator(const std::string &channel);
-    void removeOperator(const std::string &channel);
-    bool isOperator(const std::string &channel) const;
 };
 
 #endif

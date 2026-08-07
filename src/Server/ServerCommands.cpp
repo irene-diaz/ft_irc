@@ -178,24 +178,20 @@ void Server::handleJoin(Client &client,
                 start = comma + 1;
                 continue;
             }
-            bool channelExists = false; // Flag to check if the channel already exists
-            // Check if the channel already exists by looking through all clients' channels
-            for (std::map<int, Client>::iterator it = _clients.begin();
-                 it != _clients.end();
-                 ++it)
+            if (_channels.find(channel) == _channels.end())
             {
-                // If any client is already in the channel, we consider it as existing
-                if (it->second.isInChannel(channel))
-                {
-                    channelExists = true;
-                    break;
-                }
+                // If the channel doesn't exist, create it
+                _channels[channel] = Channel(channel);
+
+                // Set the joining client as an operator for the new channel
+                _channels[channel].addOperator(client.getFd());
             }
 
-            client.joinChannel(channel);
+            // Add the client to the channel's client list and mark them as joined
+            _channels[channel].addClient(client.getFd());
 
-            if (!channelExists)
-                client.setOperator(channel); // Set the joining client as an operator for the new channel
+            // Add the channel to the client's list of joined channels
+            client.joinChannel(channel);
 
             std::cout << "Client " << client.getFd()
                       << " joined channel: "
@@ -287,7 +283,6 @@ void Server::handlePart(Client &client,
                 sendNumericReply(client.getFd(),
                                  "442",
                                  channel + " :You're not on that channel");
-                return;
             }
             else
             {
@@ -304,6 +299,20 @@ void Server::handlePart(Client &client,
 
                 // Remove the client from the channel
                 client.partChannel(channel);
+
+                // Find the channel in the server
+                std::map<std::string, Channel>::iterator channelIt =
+                    _channels.find(channel);
+
+                if (channelIt != _channels.end())
+                {
+                    // Remove the client from the Channel
+                    channelIt->second.removeClient(client.getFd());
+
+                    // If nobody is left, destroy the channel
+                    if (channelIt->second.getClientCount() == 0)
+                        _channels.erase(channelIt);
+                }
 
                 std::cout << "Client " << client.getFd()
                           << " left channel: "
@@ -438,21 +447,25 @@ void Server::handleKick(Client &client,
     const std::string &channel = args[0];
     const std::string &nickname = args[1];
 
+    // Check if the channel exists
+    std::map<std::string, Channel>::iterator channelIt = _channels.find(channel);
+    if (channelIt == _channels.end())
+    {
+        sendNumericReply(client.getFd(), "403", channel + " :No such channel");
+        return;
+    }
+
     // The client performing KICK must be in the channel
     if (!client.isInChannel(channel))
     {
-        sendNumericReply(client.getFd(),
-                         "442",
-                         channel + " :You're not on that channel");
+        sendNumericReply(client.getFd(), "442", channel + " :You're not on that channel");
         return;
     }
 
     // The client performing KICK must be an operator
-    if (!client.isOperator(channel))
+    if (!channelIt->second.isOperator(client.getFd()))
     {
-        sendNumericReply(client.getFd(),
-                         "482",
-                         channel + " :You're not channel operator");
+        sendNumericReply(client.getFd(), "482", channel + " :You're not channel operator");
         return;
     }
 
@@ -499,11 +512,9 @@ void Server::handleKick(Client &client,
             sendDataToClient(it->first, reply);
     }
 
-    // Remove the target from the channel
-    targetClient->partChannel(channel);
-
-    // If the target was an operator, remove that status too
-    targetClient->removeOperator(channel);
+    // Remove the target from both sides
+    targetClient->partChannel(channel);                    // modify the client
+    channelIt->second.removeClient(targetClient->getFd()); // modify the channel
 
     std::cout << "Client " << client.getFd()
               << " kicked "
