@@ -7,10 +7,12 @@ private:
 
     std::vector<int> _clients;
     std::vector<int> _operators;
+    std::vector<int> _invitedClients;
 
     bool _inviteOnly;      //+i(invite-only)
     bool _topicRestricted; //+t(topic restricted)
 
+    std::string _topic;
     std::string _password; //+k(password)
     int _userLimit;        //+l(user limit)
 
@@ -38,11 +40,18 @@ public:
     bool isTopicRestricted() const;
     void setTopicRestricted(bool value);
 
+    const std::string &getTopic() const;
+    void setTopic(const std::string &topic);
+
     const std::string &getPassword() const;
     void setPassword(const std::string &password);
 
     int getUserLimit() const;
     void setUserLimit(int limit);
+
+    void addInvitedClient(int fd);
+    void removeInvitedClient(int fd);
+    bool isInvitedClient(int fd) const;
 
     size_t getClientCount() const;
 };

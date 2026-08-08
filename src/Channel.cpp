@@ -1,19 +1,19 @@
 #include "../include/Channel.hpp"
 
 Channel::Channel()
-    : _name(""), _inviteOnly(false), _topicRestricted(false), _password(""), _userLimit(0)
+    : _name(""), _inviteOnly(false), _topicRestricted(false), _topic(""), _password(""), _userLimit(0)
 {
 }
 
 Channel::Channel(const std::string &name)
-    : _name(name), _inviteOnly(false), _topicRestricted(false), _password(""), _userLimit(0)
+    : _name(name), _inviteOnly(false), _topicRestricted(false), _topic(""), _password(""), _userLimit(0)
 {
 }
 
 Channel::Channel(const Channel &other)
     : _name(other._name), _clients(other._clients), _operators(other._operators),
-      _inviteOnly(other._inviteOnly), _topicRestricted(other._topicRestricted),
-      _password(other._password), _userLimit(other._userLimit)
+      _invitedClients(other._invitedClients), _inviteOnly(other._inviteOnly), _topicRestricted(other._topicRestricted),
+      _topic(other._topic), _password(other._password), _userLimit(other._userLimit)
 {
 }
 
@@ -24,8 +24,10 @@ Channel &Channel::operator=(const Channel &other)
         _name = other._name;
         _clients = other._clients;
         _operators = other._operators;
+        _invitedClients = other._invitedClients;
         _inviteOnly = other._inviteOnly;
         _topicRestricted = other._topicRestricted;
+        _topic = other._topic;
         _password = other._password;
         _userLimit = other._userLimit;
     }
@@ -98,6 +100,38 @@ bool Channel::isOperator(int fd) const
     return false;
 }
 
+void Channel::addInvitedClient(int fd)
+{
+    for (size_t i = 0; i < _invitedClients.size(); ++i)
+    {
+        if (_invitedClients[i] == fd)
+            return;
+    }
+    _invitedClients.push_back(fd);
+}
+
+void Channel::removeInvitedClient(int fd)
+{
+    for (size_t i = 0; i < _invitedClients.size(); ++i)
+    {
+        if (_invitedClients[i] == fd)
+        {
+            _invitedClients.erase(_invitedClients.begin() + i);
+            return;
+        }
+    }
+}
+
+bool Channel::isInvitedClient(int fd) const
+{
+    for (size_t i = 0; i < _invitedClients.size(); ++i)
+    {
+        if (_invitedClients[i] == fd)
+            return true;
+    }
+    return false;
+}
+
 bool Channel::isInviteOnly() const
 {
     return _inviteOnly;
@@ -116,6 +150,16 @@ bool Channel::isTopicRestricted() const
 void Channel::setTopicRestricted(bool value)
 {
     _topicRestricted = value;
+}
+
+const std::string &Channel::getTopic() const
+{
+    return _topic;
+}
+
+void Channel::setTopic(const std::string &topic)
+{
+    _topic = topic;
 }
 
 const std::string &Channel::getPassword() const
