@@ -132,6 +132,28 @@ void Client::setRealname(const std::string &realname)
     _realname = realname;
 }
 
+/* ==================== OUTPUT BUFFER ==================== */
+
+void Client::appendToSendBuffer(const std::string &data)
+{
+    _sendBuffer += data;
+}
+
+bool Client::hasPendingOutput() const
+{
+    return !_sendBuffer.empty();
+}
+
+const std::string &Client::getSendBuffer() const
+{
+    return _sendBuffer;
+}
+
+void Client::consumeSendBuffer(size_t bytes)
+{
+    _sendBuffer.erase(0, bytes);
+}
+
 /* ==================== CHANNELS ==================== */
 
 void Client::joinChannel(const std::string &channel)

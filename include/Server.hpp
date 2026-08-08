@@ -35,6 +35,9 @@ private:
     void acceptNewClient();
     void receiveDataFromClient(int clientFd);
     void sendDataToClient(int clientFd, const std::string &data);
+    void queueDataToClient(int clientFd, const std::string &data);
+    void processClientOutput(int clientFd);
+    void setClientPollOut(int clientFd, bool enable);
     void removeClient(int clientFd);
     // function to send numeric replies to clients
     void sendNumericReply(int clientFd, const std::string &code, const std::string &message);

@@ -804,7 +804,7 @@ void Server::handleMode(Client &client,
                     sendNumericReply(client.getFd(), "461", "MODE :Not enough parameters");
                     return;
                 }
-                int limit = atoi(args[argIndex++].c_str());
+                int limit = std::atoi(args[argIndex++].c_str());
                 channelIt->second.setUserLimit(limit);
                 changes += "+l";
             }

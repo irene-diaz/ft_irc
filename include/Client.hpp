@@ -9,6 +9,7 @@ class Client
 private:
     int _fd;
     std::string _recvBuffer;
+    std::string _sendBuffer;
 
     bool _passAccepted;
     bool _isRegistered;
@@ -49,6 +50,12 @@ public:
 
     const std::string &getRealname() const;
     void setRealname(const std::string &realname);
+
+    // Output buffer
+    void appendToSendBuffer(const std::string &data);
+    bool hasPendingOutput() const;
+    const std::string &getSendBuffer() const;
+    void consumeSendBuffer(size_t bytes);
 
     // Channels
     void joinChannel(const std::string &channel);
