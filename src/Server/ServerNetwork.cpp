@@ -204,8 +204,53 @@ void Server::run()
 
 void Server::removeClient(int clientFd)
 {
+    std::map<int, Client>::iterator clientIt = _clients.find(clientFd);
+    if (clientIt == _clients.end())
+        return;
+
+    Client &client = clientIt->second;
+    std::string nickname = client.getNickname();
+    std::string username = client.getUsername();
+
+    // Get list of channels before erasing
+    std::vector<std::string> channels;
+    for (size_t i = 0; i < client.isInChannel("") ? 1 : 0; ++i)
+        ;
+
+    // Extract channel list manually
+    std::vector<std::string> channelsToLeave;
+    std::map<std::string, Channel>::iterator chanIt = _channels.begin();
+    while (chanIt != _channels.end())
+    {
+        if (chanIt->second.hasClient(clientFd))
+            channelsToLeave.push_back(chanIt->first);
+        ++chanIt;
+    }
+
+    // Notify all channels and remove client from them
+    for (size_t i = 0; i < channelsToLeave.size(); ++i)
+    {
+        const std::string &channel = channelsToLeave[i];
+        std::string quitMsg = ":" + nickname + "!" + username + "@localhost QUIT :Client disconnected\r\n";
+
+        std::map<std::string, Channel>::iterator it = _channels.find(channel);
+        if (it != _channels.end())
+        {
+            for (std::map<int, Client>::iterator otherclient = _clients.begin();
+                 otherclient != _clients.end();
+                 ++otherclient)
+            {
+                if (otherclient->first != clientFd && otherclient->second.isInChannel(channel))
+                    queueDataToClient(otherclient->first, quitMsg);
+            }
+            it->second.removeClient(clientFd);
+            if (it->second.getClientCount() == 0)
+                _channels.erase(it);
+        }
+    }
+
     close(clientFd);
-    _clients.erase(clientFd);
+    _clients.erase(clientIt);
 
     for (std::vector<pollfd>::iterator it = _pollfds.begin(); it != _pollfds.end(); ++it)
     {
@@ -264,6 +309,13 @@ void Server::processClientOutput(int clientFd)
         client.consumeSendBuffer(static_cast<size_t>(bytesSent));
         if (!client.hasPendingOutput())
             setClientPollOut(clientFd, false);
+        return;
+    }
+
+    if (bytesSent == 0)
+    {
+        // Peer closed the connection
+        removeClient(clientFd);
         return;
     }
 
