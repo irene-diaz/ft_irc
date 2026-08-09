@@ -1,4 +1,5 @@
 #include "../../include/Server.hpp"
+#include <cstdlib>
 
 void Server::executeCommand(Client &client, const std::string &command, const std::vector<std::string> &args)
 {
@@ -14,6 +15,12 @@ void Server::executeCommand(Client &client, const std::string &command, const st
         handlePart(client, args);
     else if (command == "PRIVMSG")
         handlePrivMsg(client, args);
+    else if (command == "INVITE")
+        handleInvite(client, args);
+    else if (command == "TOPIC")
+        handleTopic(client, args);
+    else if (command == "MODE")
+        handleMode(client, args);
     else if (command == "KICK")
         handleKick(client, args);
     else
@@ -178,6 +185,17 @@ void Server::handleJoin(Client &client,
                 start = comma + 1;
                 continue;
             }
+            std::string key;
+            if (args.size() > 1)
+            {
+                size_t keyComma = channelList.find(',', start);
+                size_t keyEnd = (keyComma == std::string::npos) ? std::string::npos : keyComma - start;
+                if (keyComma == std::string::npos)
+                    key = args[1].substr(start);
+                else
+                    key = args[1].substr(start, keyEnd);
+            }
+
             if (_channels.find(channel) == _channels.end())
             {
                 // If the channel doesn't exist, create it
@@ -185,10 +203,47 @@ void Server::handleJoin(Client &client,
 
                 // Set the joining client as an operator for the new channel
                 _channels[channel].addOperator(client.getFd());
+
+                // If a key was provided for the new channel, set it
+                if (!key.empty())
+                    _channels[channel].setPassword(key);
+            }
+
+            Channel &channelObj = _channels[channel];
+
+            if (channelObj.isInviteOnly() && !channelObj.isInvitedClient(client.getFd()) && !channelObj.isOperator(client.getFd()))
+            {
+                sendNumericReply(client.getFd(), "473", channel + " :Cannot join channel (+i)");
+                if (comma == std::string::npos)
+                    break;
+                start = comma + 1;
+                continue;
+            }
+
+            if (!channelObj.getPassword().empty())
+            {
+                if (key.empty() || key != channelObj.getPassword())
+                {
+                    sendNumericReply(client.getFd(), "475", channel + " :Cannot join channel (+k)");
+                    if (comma == std::string::npos)
+                        break;
+                    start = comma + 1;
+                    continue;
+                }
+            }
+
+            if (channelObj.getUserLimit() > 0 && static_cast<int>(channelObj.getClientCount()) >= channelObj.getUserLimit())
+            {
+                sendNumericReply(client.getFd(), "471", channel + " :Cannot join channel (+l)");
+                if (comma == std::string::npos)
+                    break;
+                start = comma + 1;
+                continue;
             }
 
             // Add the client to the channel's client list and mark them as joined
-            _channels[channel].addClient(client.getFd());
+            channelObj.addClient(client.getFd());
+            channelObj.removeInvitedClient(client.getFd());
 
             // Add the channel to the client's list of joined channels
             client.joinChannel(channel);
@@ -521,4 +576,297 @@ void Server::handleKick(Client &client,
               << nickname
               << " from "
               << channel << std::endl;
+}
+
+void Server::handleInvite(Client &client,
+                          const std::vector<std::string> &args)
+{
+    if (!client.isRegistered())
+    {
+        sendNumericReply(client.getFd(), "451", ":You have not registered");
+        return;
+    }
+
+    if (args.size() < 2)
+    {
+        sendNumericReply(client.getFd(), "461", "INVITE :Not enough parameters");
+        return;
+    }
+
+    const std::string &nickname = args[0];
+    const std::string &channel = args[1];
+
+    std::map<int, Client>::iterator targetIt = _clients.end();
+    for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
+    {
+        if (it->second.getNickname() == nickname)
+        {
+            targetIt = it;
+            break;
+        }
+    }
+
+    if (targetIt == _clients.end())
+    {
+        sendNumericReply(client.getFd(), "401", nickname + " :No such nickname");
+        return;
+    }
+
+    std::map<std::string, Channel>::iterator channelIt = _channels.find(channel);
+    if (channelIt == _channels.end())
+    {
+        sendNumericReply(client.getFd(), "403", channel + " :No such channel");
+        return;
+    }
+
+    if (!client.isInChannel(channel))
+    {
+        sendNumericReply(client.getFd(), "442", channel + " :You're not on that channel");
+        return;
+    }
+
+    if (!channelIt->second.isOperator(client.getFd()))
+    {
+        sendNumericReply(client.getFd(), "482", channel + " :You're not channel operator");
+        return;
+    }
+
+    if (targetIt->second.isInChannel(channel))
+    {
+        sendNumericReply(client.getFd(), "443", nickname + " " + channel + " :is already on channel");
+        return;
+    }
+
+    channelIt->second.addInvitedClient(targetIt->first);
+
+    std::string inviteMsg = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost INVITE " + nickname + " " + channel + "\r\n";
+    sendDataToClient(targetIt->first, inviteMsg);
+    sendDataToClient(client.getFd(), inviteMsg);
+}
+
+void Server::handleTopic(Client &client,
+                          const std::vector<std::string> &args)
+{
+    if (!client.isRegistered())
+    {
+        sendNumericReply(client.getFd(), "451", ":You have not registered");
+        return;
+    }
+
+    if (args.empty())
+    {
+        sendNumericReply(client.getFd(), "461", "TOPIC :Not enough parameters");
+        return;
+    }
+
+    const std::string &channel = args[0];
+    std::string topic;
+    if (args.size() > 1)
+        topic = args[1];
+
+    std::map<std::string, Channel>::iterator channelIt = _channels.find(channel);
+    if (channelIt == _channels.end())
+    {
+        sendNumericReply(client.getFd(), "403", channel + " :No such channel");
+        return;
+    }
+
+    if (!client.isInChannel(channel))
+    {
+        sendNumericReply(client.getFd(), "442", channel + " :You're not on that channel");
+        return;
+    }
+
+    Channel &channelObj = channelIt->second;
+
+    if (topic.empty())
+    {
+        if (channelObj.getTopic().empty())
+        {
+            sendNumericReply(client.getFd(), "331", channel + " :No topic is set");
+        }
+        else
+        {
+            sendNumericReply(client.getFd(), "332", channel + " :" + channelObj.getTopic());
+        }
+        return;
+    }
+
+    if (channelObj.isTopicRestricted() && !channelObj.isOperator(client.getFd()))
+    {
+        sendNumericReply(client.getFd(), "482", channel + " :You're not channel operator");
+        return;
+    }
+
+    channelObj.setTopic(topic);
+    std::string reply = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost TOPIC " + channel + " :" + topic + "\r\n";
+
+    for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
+    {
+        if (it->second.isInChannel(channel))
+            sendDataToClient(it->first, reply);
+    }
+}
+
+void Server::handleMode(Client &client,
+                        const std::vector<std::string> &args)
+{
+    if (!client.isRegistered())
+    {
+        sendNumericReply(client.getFd(), "451", ":You have not registered");
+        return;
+    }
+
+    if (args.size() < 2)
+    {
+        sendNumericReply(client.getFd(), "461", "MODE :Not enough parameters");
+        return;
+    }
+
+    const std::string &channel = args[0];
+    const std::string &mode = args[1];
+
+    std::map<std::string, Channel>::iterator channelIt = _channels.find(channel);
+    if (channelIt == _channels.end())
+    {
+        sendNumericReply(client.getFd(), "403", channel + " :No such channel");
+        return;
+    }
+
+    if (!client.isInChannel(channel))
+    {
+        sendNumericReply(client.getFd(), "442", channel + " :You're not on that channel");
+        return;
+    }
+
+    if (!channelIt->second.isOperator(client.getFd()))
+    {
+        sendNumericReply(client.getFd(), "482", channel + " :You're not channel operator");
+        return;
+    }
+
+    bool add = true;
+    size_t argIndex = 2;
+    std::string changes;
+
+    for (size_t i = 0; i < mode.size(); ++i)
+    {
+        char c = mode[i];
+
+        if (c == '+')
+        {
+            add = true;
+            continue;
+        }
+        if (c == '-')
+        {
+            add = false;
+            continue;
+        }
+
+        if (c == 'i')
+        {
+            channelIt->second.setInviteOnly(add);
+            changes += (add ? "+i" : "-i");
+            continue;
+        }
+        if (c == 't')
+        {
+            channelIt->second.setTopicRestricted(add);
+            changes += (add ? "+t" : "-t");
+            continue;
+        }
+        if (c == 'k')
+        {
+            if (add)
+            {
+                if (argIndex >= args.size())
+                {
+                    sendNumericReply(client.getFd(), "461", "MODE :Not enough parameters");
+                    return;
+                }
+                channelIt->second.setPassword(args[argIndex++]);
+                changes += "+k";
+            }
+            else
+            {
+                channelIt->second.setPassword("");
+                changes += "-k";
+            }
+            continue;
+        }
+        if (c == 'l')
+        {
+            if (add)
+            {
+                if (argIndex >= args.size())
+                {
+                    sendNumericReply(client.getFd(), "461", "MODE :Not enough parameters");
+                    return;
+                }
+                int limit = std::atoi(args[argIndex++].c_str());
+                channelIt->second.setUserLimit(limit);
+                changes += "+l";
+            }
+            else
+            {
+                channelIt->second.setUserLimit(0);
+                changes += "-l";
+            }
+            continue;
+        }
+        if (c == 'o')
+        {
+            if (argIndex >= args.size())
+            {
+                sendNumericReply(client.getFd(), "461", "MODE :Not enough parameters");
+                return;
+            }
+            const std::string &targetNick = args[argIndex++];
+            std::map<int, Client>::iterator targetIt = _clients.end();
+            for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
+            {
+                if (it->second.getNickname() == targetNick)
+                {
+                    targetIt = it;
+                    break;
+                }
+            }
+            if (targetIt == _clients.end() || !targetIt->second.isInChannel(channel))
+            {
+                sendNumericReply(client.getFd(), "441", targetNick + " " + channel + " :They aren't on that channel");
+                return;
+            }
+            if (add)
+            {
+                channelIt->second.addOperator(targetIt->first);
+                changes += "+o";
+            }
+            else
+            {
+                channelIt->second.removeOperator(targetIt->first);
+                changes += "-o";
+            }
+            continue;
+        }
+    }
+
+    if (!changes.empty())
+    {
+        std::string reply = ":" + client.getNickname() + "!" + client.getUsername() + "@localhost MODE " + channel + " " + changes;
+        if (argIndex <= args.size())
+        {
+            for (size_t j = 2; j < args.size(); ++j)
+            {
+                reply += " ";
+                reply += args[j];
+            }
+        }
+        reply += "\r\n";
+        for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
+        {
+            if (it->second.isInChannel(channel))
+                sendDataToClient(it->first, reply);
+        }
+    }
 }

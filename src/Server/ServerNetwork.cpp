@@ -1,9 +1,25 @@
 #include "../../include/Server.hpp"
+#include <fcntl.h>
+#include <cerrno>
+
+static void setNonBlockingFd(int fd)
+{
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1)
+        throw std::runtime_error("Failed to get socket flags");
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
+        throw std::runtime_error("Failed to set socket non-blocking");
+}
 
 void Server::sendNumericReply(int clientFd, const std::string &code, const std::string &message)
 {
     std::string reply = ":ircserv " + code + " " + message + "\r\n";
-    sendDataToClient(clientFd, reply);
+    queueDataToClient(clientFd, reply);
+}
+
+void Server::sendDataToClient(int clientFd, const std::string &data)
+{
+    queueDataToClient(clientFd, data);
 }
 
 // Initialize the server socket, bind it to the specified port, and start listening for incoming connections
@@ -21,6 +37,8 @@ void Server::init(int port, const std::string &password)
     {
         throw std::runtime_error("Failed to create socket");
     }
+
+    setNonBlockingFd(_serverFd);
     int opt = 1;
 
     // Set socket options to allow reuse of the address and port
@@ -77,7 +95,13 @@ void Server::acceptNewClient()
     /*accept(fd, addr, addrlen)*/
     int clientFd = accept(_serverFd, NULL, NULL);
     if (clientFd == -1)
+    {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return;
         throw std::runtime_error("Failed to accept new client");
+    }
+
+    setNonBlockingFd(clientFd);
 
     // Create a new Client object for the accepted client socket and add it to the _clients map
     Client client(clientFd);
@@ -104,6 +128,8 @@ void Server::receiveDataFromClient(int clientFd)
     ssize_t bytesRead = recv(clientFd, buffer, sizeof(buffer) - 1, 0);
     if (bytesRead == -1)
     {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return;
         throw std::runtime_error("Failed to receive data from client");
     }
     else if (bytesRead == 0)
@@ -152,27 +178,80 @@ void Server::run()
 
         for (size_t i = 0; i < pollfds.size(); ++i)
         {
-            if (!(pollfds[i].revents & POLLIN))
-                continue;
-
             int fd = pollfds[i].fd;
 
             if (fd == _serverFd)
-                acceptNewClient();
-            else
+            {
+                if (pollfds[i].revents & POLLIN)
+                    acceptNewClient();
+                continue;
+            }
+
+            if (pollfds[i].revents & (POLLHUP | POLLERR | POLLNVAL))
+            {
+                removeClient(fd);
+                continue;
+            }
+
+            if (pollfds[i].revents & POLLIN)
                 receiveDataFromClient(fd);
+
+            if (pollfds[i].revents & POLLOUT)
+                processClientOutput(fd);
         }
     }
 }
 
 void Server::removeClient(int clientFd)
 {
-    // Close the client socket
-    close(clientFd);
-    // Remove the client from the _clients map
-    _clients.erase(clientFd);
+    std::map<int, Client>::iterator clientIt = _clients.find(clientFd);
+    if (clientIt == _clients.end())
+        return;
 
-    // Remove the client from the _pollfds vector
+    Client &client = clientIt->second;
+    std::string nickname = client.getNickname();
+    std::string username = client.getUsername();
+
+    // Get list of channels before erasing
+    std::vector<std::string> channels;
+    for (size_t i = 0; i < client.isInChannel("") ? 1 : 0; ++i)
+        ;
+
+    // Extract channel list manually
+    std::vector<std::string> channelsToLeave;
+    std::map<std::string, Channel>::iterator chanIt = _channels.begin();
+    while (chanIt != _channels.end())
+    {
+        if (chanIt->second.hasClient(clientFd))
+            channelsToLeave.push_back(chanIt->first);
+        ++chanIt;
+    }
+
+    // Notify all channels and remove client from them
+    for (size_t i = 0; i < channelsToLeave.size(); ++i)
+    {
+        const std::string &channel = channelsToLeave[i];
+        std::string quitMsg = ":" + nickname + "!" + username + "@localhost QUIT :Client disconnected\r\n";
+
+        std::map<std::string, Channel>::iterator it = _channels.find(channel);
+        if (it != _channels.end())
+        {
+            for (std::map<int, Client>::iterator otherclient = _clients.begin();
+                 otherclient != _clients.end();
+                 ++otherclient)
+            {
+                if (otherclient->first != clientFd && otherclient->second.isInChannel(channel))
+                    queueDataToClient(otherclient->first, quitMsg);
+            }
+            it->second.removeClient(clientFd);
+            if (it->second.getClientCount() == 0)
+                _channels.erase(it);
+        }
+    }
+
+    close(clientFd);
+    _clients.erase(clientIt);
+
     for (std::vector<pollfd>::iterator it = _pollfds.begin(); it != _pollfds.end(); ++it)
     {
         if (it->fd == clientFd)
@@ -184,20 +263,66 @@ void Server::removeClient(int clientFd)
     std::cout << "Client removed: " << clientFd << std::endl;
 }
 
-void Server::sendDataToClient(int clientFd, const std::string &data)
+void Server::setClientPollOut(int clientFd, bool enable)
 {
-    size_t total = 0;
-
-    while (total < data.size())
+    for (std::vector<pollfd>::iterator it = _pollfds.begin(); it != _pollfds.end(); ++it)
     {
-        ssize_t bytesSent = send(clientFd,
-                                 data.c_str() + total,
-                                 data.size() - total,
-                                 0);
+        if (it->fd == clientFd)
+        {
+            if (enable)
+                it->events |= POLLOUT;
+            else
+                it->events &= ~POLLOUT;
+            return;
+        }
+    }
+}
 
-        if (bytesSent == -1)
-            throw std::runtime_error("Failed to send data to client");
+void Server::queueDataToClient(int clientFd, const std::string &data)
+{
+    std::map<int, Client>::iterator it = _clients.find(clientFd);
+    if (it == _clients.end())
+        return;
 
-        total += bytesSent;
+    Client &client = it->second;
+    client.appendToSendBuffer(data);
+    setClientPollOut(clientFd, true);
+}
+
+void Server::processClientOutput(int clientFd)
+{
+    std::map<int, Client>::iterator it = _clients.find(clientFd);
+    if (it == _clients.end())
+        return;
+
+    Client &client = it->second;
+    if (!client.hasPendingOutput())
+    {
+        setClientPollOut(clientFd, false);
+        return;
+    }
+
+    const std::string &buffer = client.getSendBuffer();
+    ssize_t bytesSent = send(clientFd, buffer.c_str(), buffer.size(), 0);
+    if (bytesSent > 0)
+    {
+        client.consumeSendBuffer(static_cast<size_t>(bytesSent));
+        if (!client.hasPendingOutput())
+            setClientPollOut(clientFd, false);
+        return;
+    }
+
+    if (bytesSent == 0)
+    {
+        // Peer closed the connection
+        removeClient(clientFd);
+        return;
+    }
+
+    if (bytesSent == -1)
+    {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return;
+        removeClient(clientFd);
     }
 }
