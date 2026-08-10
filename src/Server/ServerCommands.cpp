@@ -29,6 +29,15 @@ void Server::executeCommand(Client &client, const std::string &command, const st
 
 void Server::handlePass(Client &client, const std::vector<std::string> &args)
 {
+    // Check if the client is already registered
+    if (client.isRegistered())
+    {
+        sendNumericReply(client.getFd(),
+                         "462",
+                         ":You may not reregister");
+        return;
+    }
+
     if (args.empty())
     {
         sendNumericReply(client.getFd(),
@@ -86,11 +95,21 @@ void Server::handleNick(Client &client, const std::vector<std::string> &args)
         return;
     }
 
+    const std::string &nickname = args[0];
+
+    // Check if the nickname is valid according to IRC rules
+    if (!isValidNickname(nickname))
+    {
+        sendNumericReply(client.getFd(), "432", nickname + " :Erroneous nickname");
+        return;
+    }
+
+    // Check if the nickname is already in use by another client
     for (std::map<int, Client>::const_iterator it = _clients.begin();
          it != _clients.end();
          ++it)
     {
-        if (it->first != client.getFd() && it->second.getNickname() == args[0])
+        if (it->first != client.getFd() && it->second.getNickname() == nickname)
         {
             sendNumericReply(client.getFd(),
                              "433",
@@ -99,7 +118,7 @@ void Server::handleNick(Client &client, const std::vector<std::string> &args)
         }
     }
 
-    client.setNickname(args[0]);
+    client.setNickname(nickname);
 
     std::cout << "Client " << client.getFd()
               << " set nickname to: "
@@ -111,6 +130,14 @@ void Server::handleNick(Client &client, const std::vector<std::string> &args)
 void Server::handleUser(Client &client,
                         const std::vector<std::string> &args)
 {
+    // Check if the client is already registered
+    if (client.isRegistered())
+    {
+        sendNumericReply(client.getFd(),
+                         "462",
+                         ":You may not reregister");
+        return;
+    }
     if (!client.isPassAccepted())
     {
         sendNumericReply(client.getFd(),
@@ -176,9 +203,24 @@ void Server::handleJoin(Client &client,
         // Ignore empty channel names
         if (!channel.empty())
         {
+            if (channel.size() < 2 || channel[0] != '#')
+            {
+                sendNumericReply(client.getFd(),
+                                 "403",
+                                 channel + " :No such channel");
+
+                if (comma == std::string::npos)
+                    break;
+
+                start = comma + 1;
+                continue;
+            }
             // Don't join the same channel twice
             if (client.isInChannel(channel))
             {
+                sendNumericReply(client.getFd(),
+                                 "443",
+                                 channel + " :is already on channel");
                 if (comma == std::string::npos)
                     break;
 
@@ -645,7 +687,7 @@ void Server::handleInvite(Client &client,
 }
 
 void Server::handleTopic(Client &client,
-                          const std::vector<std::string> &args)
+                         const std::vector<std::string> &args)
 {
     if (!client.isRegistered())
     {
