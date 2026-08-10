@@ -8,6 +8,7 @@
 
 #include <unistd.h>
 #include <cstring>
+#include <cctype>
 
 #include <poll.h>
 
@@ -56,6 +57,9 @@ private:
     void handleTopic(Client &client, const std::vector<std::string> &args);
     void handleMode(Client &client, const std::vector<std::string> &args);
     void handleKick(Client &client, const std::vector<std::string> &args);
+
+    // helpers
+    bool isValidNickname(const std::string &nickname) const;
 
 public:
     Server();

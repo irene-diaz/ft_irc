@@ -1,0 +1,66 @@
+1. Arranque del servidor
+
+Primero:
+
+./ircserv <puerto> <password>
+
+Por ejemplo:
+
+./ircserv 6667 1234
+
+CLIENTE EN VARIOS CANALES A LA VEZ
+
+PASS 1234
+NICK bob
+USER bob 0 * :Bob
+JOIN #42,#others
+
+PASS 1234
+NICK alice
+USER alice 0 * :Alice
+JOIN #42,#others
+
+PASS 1234
+NICK carol
+USER carol 0 * :Carol
+JOIN #42,#others
+PASS #42,#others
+
+NO FUNCIONA!!
+
+ESTO SE HA ROTO REVISAR EL PORQUE 
+
+10. Operadores
+
+Esta parte es especialmente importante después de los cambios que habéis hecho.
+
+Primer usuario
+Alice:
+JOIN #42
+
+Alice = operator.
+
+Segundo usuario
+Bob:
+JOIN #42
+
+Bob ≠ operator.
+
+PART del operador
+Alice:
+PART #42
+
+Bob sigue dentro.
+
+¿Qué debería pasar con el operator?
+
+Aquí tenéis que comprobar qué comportamiento habéis implementado/especificado. Si vuestro diseño dice que el operador desaparece al salir y el canal queda sin operador, hay que comprobarlo.
+
+Canal vacío
+Bob:
+PART #42
+
+Carol:
+JOIN #42
+
+Carol debe ser operator.
