@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <cstring>
 #include <cctype>
+#include <cstdlib>
 
 #include <poll.h>
 
@@ -42,7 +43,7 @@ private:
     void removeClient(int clientFd);
     // function to send numeric replies to clients
     void sendNumericReply(int clientFd, const std::string &code, const std::string &message);
-    void tryRegister(Client &client);
+
     // FUNCTIONS FOR COMMANDS
     void executeCommand(Client &client,
                         const std::string &command,
@@ -59,7 +60,13 @@ private:
     void handleKick(Client &client, const std::vector<std::string> &args);
 
     // helpers
+    void tryRegister(Client &client);
     bool isValidNickname(const std::string &nickname) const;
+    bool checkRegistered(Client &client);
+    bool checkParams(Client &client,
+                     const std::vector<std::string> &args,
+                     size_t minimum,
+                     const std::string &command);
 
 public:
     Server();
