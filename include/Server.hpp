@@ -58,6 +58,8 @@ private:
     void handleTopic(Client &client, const std::vector<std::string> &args);
     void handleMode(Client &client, const std::vector<std::string> &args);
     void handleKick(Client &client, const std::vector<std::string> &args);
+    bool isBotTarget(const std::string &target) const;
+    void handleBotCommand(Client &client, const std::string &target, const std::string &message);
 
     // helpers
     void tryRegister(Client &client);
