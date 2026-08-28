@@ -1,9 +1,28 @@
 CXX = c++
-CXXFLAGS = -Wall -Wextra -Werror -std=c++98 #-fsanitize=address -g
-#LDFLAGS = -fsanitize=address
-SRCS = src/Server/Server.cpp src/Server/ServerCommands.cpp src/Server/ServerPass.cpp src/Server/ServerNick.cpp src/Server/ServerUser.cpp src/Server/ServerJoin.cpp src/Server/ServerPart.cpp src/Server/ServerPrivMsg.cpp src/Server/ServerKick.cpp src/Server/ServerTopic.cpp src/Server/ServerInvite.cpp src/Server/ServerMode.cpp src/Server/ServerNetwork.cpp src/Server/helper.cpp src/Client.cpp src/Parser.cpp src/Channel.cpp src/main.cpp
+CXXFLAGS = -Wall -Wextra -Werror -std=c++98
+
+SRCS = src/Server/Server.cpp \
+       src/Server/ServerCommands.cpp \
+       src/Server/ServerPass.cpp \
+       src/Server/ServerNick.cpp \
+       src/Server/ServerUser.cpp \
+       src/Server/ServerJoin.cpp \
+       src/Server/ServerPart.cpp \
+       src/Server/ServerPrivMsg.cpp \
+       src/Server/ServerKick.cpp \
+       src/Server/ServerTopic.cpp \
+       src/Server/ServerInvite.cpp \
+       src/Server/ServerMode.cpp \
+       src/Server/ServerNetwork.cpp \
+       src/Server/helper.cpp \
+       src/Client.cpp \
+       src/Parser.cpp \
+       src/Channel.cpp \
+       src/main.cpp
+
 OBJS_DIR = obj
 OBJS = $(addprefix $(OBJS_DIR)/, $(SRCS:.cpp=.o))
+
 NAME = ircserv
 
 all: $(NAME)
@@ -15,6 +34,8 @@ $(OBJS_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+bonus: $(NAME)
+
 clean:
 	rm -rf $(OBJS_DIR)
 
@@ -22,3 +43,5 @@ fclean: clean
 	rm -f $(NAME)
 
 re: fclean all
+
+.PHONY: all bonus clean fclean re
