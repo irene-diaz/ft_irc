@@ -1,13 +1,9 @@
 #include "../../include/Server.hpp"
 #include <fcntl.h>
-#include <cerrno>
 
 static void setNonBlockingFd(int fd)
 {
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags == -1)
-        throw std::runtime_error("Failed to get socket flags");
-    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
+    if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1)
         throw std::runtime_error("Failed to set socket non-blocking");
 }
 
@@ -95,11 +91,7 @@ void Server::acceptNewClient()
     /*accept(fd, addr, addrlen)*/
     int clientFd = accept(_serverFd, NULL, NULL);
     if (clientFd == -1)
-    {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return;
         throw std::runtime_error("Failed to accept new client");
-    }
 
     setNonBlockingFd(clientFd);
 
@@ -128,9 +120,8 @@ void Server::receiveDataFromClient(int clientFd)
     ssize_t bytesRead = recv(clientFd, buffer, sizeof(buffer) - 1, 0);
     if (bytesRead == -1)
     {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return;
-        throw std::runtime_error("Failed to receive data from client");
+        removeClient(clientFd);
+        return;
     }
     else if (bytesRead == 0)
     {
@@ -321,8 +312,6 @@ void Server::processClientOutput(int clientFd)
 
     if (bytesSent == -1)
     {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return;
         removeClient(clientFd);
     }
 }

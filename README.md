@@ -64,6 +64,25 @@ PRIVMSG #general :Hello everyone!
 - `make fclean`: Remove object files and the executable
 - `make re`: Clean and recompile
 
+## Bonus: IRC Bot
+
+A small server-side bot is included as a bonus feature. It responds to both direct messages and channel commands using a simple command set.
+
+### Example commands
+
+```text
+PRIVMSG IRCBot :!help
+PRIVMSG #general :!ping
+PRIVMSG IRCBot :!time
+```
+
+The bot understands:
+- `!help`: List the available commands
+- `!time`: Show the server time
+- `!ping`: Reply with a PONG
+- `!whoami`: Tell the user which nickname they are using
+- `!hello`: Greet the user
+
 ## Resources
 
 ### IRC Protocol Documentation
